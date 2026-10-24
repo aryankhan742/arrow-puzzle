@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arrow Puzzle - 100 Levels</title>
+<style>
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  padding: 20px 14px;
+  background: #101827;
+  color: white;
+  font-family: Arial, sans-serif;
+  text-align: center;
+}
+h1 { color: #a78bfa; font-size: 27px; }
+.info { color: #cbd5e1; margin: 12px; }
+#board {
+  width: min(92vw, 430px);
+  aspect-ratio: 1;
+  margin: 20px auto;
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+  padding: 8px;
+  border-radius: 16px;
+  background: #1e293b;
+}
+.cell {
+  min-width: 0;
+  border: 1px solid #394b65;
+  border-radius: 8px;
+  background: #293950;
+  color: white;
+  font-size: clamp(20px, 6vw, 32px);
+  cursor: pointer;
+}
+.cell.empty { background: #172235; border-color: #202e43; }
+.cell:active { background: #7c3aed; }
+button.action {
+  border: 0;
+  border-radius: 10px;
+  padding: 12px 16px;
+  margin: 4px;
+  background: #7c3aed;
+  color: white;
+  font-size: 15px;
+  font-weight: bold;
+}
+button.action:disabled { opacity: .4; }
+#message { min-height: 44px; color: #c4b5fd; }
+</style>
+</head>
+<body>
+<h1>➜ Arrow Puzzle</h1>
+<p class="info">
+  Level <span id="level">1</span> / 100
+  · Arrows left: <span id="left">0</span>
+</p>
+
+<div id="board"></div>
+<p id="message">Tap an arrow with a clear path to the edge.</p>
+
+<button class="action" id="hint">💡 Hint</button>
+<button class="action" id="restart">↻ Restart</button>
+<button class="action" id="next" disabled>Next Level →</button>
+
+<script>
+const SIZE = 7;
+const board = document.getElementById("board");
+const message = document.getElementById("message");
+const levelText = document.getElementById("level");
+const leftText = document.getElementById("left");
+const nextButton = document.getElementById("next");
+
+const directions = [
+  { symbol: "↑", dr: -1, dc: 0, name: "up" },
+  { symbol: "→", dr: 0, dc: 1, name: "right" },
+  { symbol: "↓", dr: 1, dc: 0, name: "down" },
+  { symbol: "←", dr: 0, dc: -1, name: "left" }
+];
+
+let level = 1;
+let arrows = [];
+let original = [];
+let moves = 0;
+let won = false;
+
+function generateLevel(number) {
+  const count = Math.min(42, 8 + Math.floor((number - 1) * 0.35));
+  const cells = [];
+
+  for (let r = 0; r < SIZE; r++) {
+    for (let c = 0; c < SIZE; c++) {
+      cells.push({ r, c });
+    }
+  }
+
+  // Pick random positions.
+  cells.sort(() => Math.random() - 0.5);
+  let remaining = cells.slice(0, count).map((p, id) => ({
+    ...p, id, dir: null, removed: false
+  }));
+
+  // Assign directions in a solvable removal order.
+  while (remaining.length) {
+    const choices = [];
+
+    for (const a of remaining) {
+      const exits = directions.filter(d => {
+        let r = a.r + d.dr;
+        let c = a.c + d.dc;
+
+        while (r >= 0 && r < SIZE && c >= 0 && c < SIZE) {
+          if (remaining.some(b => b.r === r && b.c === c)) {
+            return false;
+          }
+          r += d.dr;
+          c += d.dc;
+        }
+        return true;
+      });
+
+      if (exits.length) choices.push({ a, exits });
+    }
+
+    const choice = choices[Math.floor(Math.random() * choices.length)];
+    choice.a.dir = choice.exits[
+      Math.floor(Math.random() * choice.exits.length)
+    ];
+    remaining = remaining.filter(a => a.id !== choice.a.id);
+  }
+
+  return cells.length ? cells
+    .filter(p => arrowsAtPosition(p, []))
+    .concat([]).slice(0, 0) : [];
+}
+
+function makePuzzle(number) {
+  const count = Math.min(42, 8 + Math.floor((number - 1) * 0.35));
+  const positions = [];
+
+  for (let r = 0; r < SIZE; r++)
+    for (let c = 0; c < SIZE; c++)
+      positions.push({ r, c });
+
+  positions.sort(() => Math.random() - 0.5);
+  let remaining = positions.slice(0, count).map((p, id) => ({
+    ...p, id, dir: null, removed: false
+  }));
+  const solutionOrder = [];
+
+  while (remaining.length) {
+    const options = [];
+
+    for (const a of remaining) {
+      const exits = directions.filter(d => {
+        let r = a.r + d.dr, c = a.c + d.dc;
+        while (r >= 0 && r < SIZE && c >= 0 && c < SIZE) {
+          if (remaining.some(b => b.r === r && b.c === c)) return false;
+          r += d.dr; c += d.dc;
+        }
+        return true;
+      });
+      if (exits.length) options.push({ a, exits });
+    }
+
+    const selected = options[Math.floor(Math.random() * options.length)];
+    selected.a.dir = selected.exits[
+      Math.floor(Math.random() * selected.exits.length)
+    ];
+    solutionOrder.push({ ...selected.a });
+    remaining = remaining.filter(a => a.id !== selected.a.id);
+  }
+
+  return solutionOrder;
+}
+
+function canExit(a) {
+  let r = a.r + a.dir.dr;
+  let c = a.c + a.dir.dc;
+
+  while (r >= 0 && r < SIZE && c >= 0 && c < SIZE) {
+    if (arrows.some(b => !b.removed && b.r === r && b.c === c))
+      return false;
+    r += a.dir.dr;
+    c += a.dir.dc;
+  }
+  return true;
+}
+
+function render() {
+  board.innerHTML = "";
+
+  for (let r = 0; r < SIZE; r++) {
+    for (let c = 0; c < SIZE; c++) {
+      const a = arrows.find(x =>
+        !x.removed && x.r === r && x.c === c
+      );
+      const cell = document.createElement("button");
+
+      cell.className = "cell" + (a ? "" : " empty");
+      cell.textContent = a ? a.dir.symbol : "";
+      cell.setAttribute("aria-label", a ? "Arrow" : "Empty cell");
+
+      if (a) cell.onclick = () => tapArrow(a.id);
+      else cell.disabled = true;
+
+      board.appendChild(cell);
+    }
+  }
+
+  leftText.textContent = arrows.filter(a => !a.removed).length;
+  levelText.textContent = level;
+  nextButton.disabled = !won || level === 100;
+}
+
+function tapArrow(id) {
+  if (won) return;
+
+  const a = arrows.find(x => x.id === id && !x.removed);
+  if (!a) return;
+
+  if (!canExit(a)) {
+    message.textContent = "Blocked! Try another arrow.";
+    return;
+  }
+
+  a.removed = true;
+  moves++;
+  message.textContent = "Good move!";
+
+  if (arrows.every(x => x.removed)) {
+    won = true;
+    message.textContent = level === 100
+      ? "Amazing! All 100 levels completed!"
+      : "Level complete! Tap Next Level.";
+  }
+
+  render();
+}
+
+function loadLevel(n) {
+  level = n;
+  moves = 0;
+  won = false;
+  arrows = makePuzzle(n);
+  original = arrows.map(a => ({ ...a }));
+  message.textContent = "Find an arrow with a clear path.";
+  render();
+}
+
+document.getElementById("hint").onclick = () => {
+  const a = arrows.find(x => !x.removed && canExit(x));
+  message.textContent = a
+    ? "Hint: try the " + a.dir.name + " arrow."
+    : "No available move. Restart the level.";
+};
+
+document.getElementById("restart").onclick = () => {
+  arrows = original.map(a => ({ ...a, removed: false }));
+  moves = 0;
+  won = false;
+  message.textContent = "Level restarted.";
+  render();
+};
+
+nextButton.onclick = () => {
+  if (won && level < 100) loadLevel(level + 1);
+};
+
+loadLevel(1);
+</script>
+</body>
+</html>
